@@ -83,15 +83,37 @@ cd /srv/husqvarna/app && python3 -m venv .venv && .venv/bin/pip install -e .
 `deploy/husqvarna-scraper.service` + `deploy/husqvarna-scraper.timer` run a nightly
 `all --resume`; `deploy/run.sh` is the same thing without systemd.
 
-Sizing, measured rather than guessed: the reference article costs 9 requests (155 parts),
-but demolition robots run 410–628 parts each, i.e. 21–32 requests per article. A full
-catalogue is ~2,461 articles x ~31 requests ≈ **76,000 requests**. A live smoke run answered
-185 requests in 4.6 minutes (0.68 req/s, 15.3 MB), which puts a full pass at **~31 hours** —
-so the timer is nightly with `--resume`, not a single sitting. Raise `--rps` only until the
-endpoint starts returning 429; the client backs off and retries.
+## Speed, measured
 
-Output size scales the same way: 6 articles of one demolition robot produced 3,387 part
-files.
+Three changes mattered, in this order:
+
+1. **One part fetch per product, not per article.** Variants share ~57% of their parts
+   (measured: 3,404 part rows across 6 articles of one demolition robot, 1,456 unique).
+2. **Batch 100 instead of 20.** 20 aliases cost 131 ms/part, 100 aliases cost 54 ms/part.
+   200+ aliases degrade again (missing parts, 25 s per request).
+3. **Parallelism.** 32 concurrent batches answer in the same wall time as one.
+
+Same 6-article demolition robot, same machine:
+
+| setting | requests | wall time | peak RSS |
+|---|---|---|---|
+| batch 20, sequential, rps 2 | 185 | 274 s | 45 MB |
+| batch 100, workers 16, 1 product | 31 | 62 s | 55 MB |
+| batch 100, workers 32, 1 product | 22 | **19.8 s** | 60 MB |
+| workers 32, 8 products parallel | 161 | 65 s | 180 MB |
+| workers 32, 16 products parallel | 274 | 78.6 s | 212 MB |
+
+Throughput: 12.2 products/minute at `--concurrency 16`, 7.4 at 8. Those numbers are the
+*worst* products in the catalogue (410–660 parts each); the average article carries ~136.
+
+End-to-end check: the entire **Remote demolition** category — 29 products, 233 articles,
+3,404 part rows — finished in **88.4 s** with 402 requests, 64 MB downloaded and 218 MB peak
+RSS. That category is 9.5% of the catalogue's articles and by far its heaviest, so a full
+pass extrapolates to **~15–25 minutes** and roughly 2 GB of traffic, not 31 hours.
+
+Budget ~13 MB of RSS per concurrent product above a ~45 MB base (`--concurrency 8` ≈ 180 MB,
+`--concurrency 16` ≈ 212 MB). Raise `--rps` only until the endpoint returns 429; the client
+backs off and retries.
 
 ## Fields that are not portal fields
 

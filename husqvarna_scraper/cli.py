@@ -44,14 +44,15 @@ def _log(msg: str) -> None:
 
 class Runner:
     def __init__(self, out: Path, *, layout: str, resume: bool, concurrency: int, rps: float,
-                 batch_size: int, site: str, limit: int = 0) -> None:
+                 batch_size: int, site: str, limit: int = 0, workers: int = 16) -> None:
         self.out = out
         self.layout = layout
         self.resume = resume
         self.concurrency = concurrency
-        self.client = HusqClient(site=site, rps=rps, batch_size=batch_size)
+        self.client = HusqClient(site=site, rps=rps, batch_size=batch_size, workers=workers)
         self.state_path = out / "_state.json"
         self.limit = limit
+        self.part_cache: dict[str, dict[str, Any]] = {}
         self.state: dict[str, Any] = self._load_state()
         self.done: set[str] = set(self.state.get("done", []))
         self.failed: dict[str, str] = dict(self.state.get("failed", {}))
@@ -81,6 +82,7 @@ class Runner:
         product_id: str | None = None,
         category: str | None = None,
         mode: str = "article",
+        cache: dict[str, Any] | None = None,
     ) -> None:
         if self.resume and article_id in self.done:
             return
@@ -93,7 +95,7 @@ class Runner:
                 _log(f"  hero failed for {product_id}: {type(exc).__name__}")
         plots = build_plots(sections)
         part_ids = collect_part_ids(sections)
-        rows = await self.client.parts(part_ids)
+        rows = await self.client.parts(part_ids, cache=cache)
         errors = {pid: "not returned" for pid, val in rows.items() if val is None}
         parts = {pid: val for pid, val in rows.items() if val is not None}
 
@@ -109,6 +111,57 @@ class Runner:
         self._save_state()
         _log(f"  ok {article_id}: {len(part_ids)} parts, {len(errors)} missing")
 
+
+    async def scrape_product(self, ref: ProductRef, *, category: str | None,
+                             mode: str = "article") -> None:
+        """One product = one part fetch for all of its variants.
+
+        Fetching article sections in parallel and taking the union of their part ids is what
+        turns a product from "6 sequential scrapes" into "2 parallel rounds": variants share
+        ~57% of their parts, so the union is barely larger than one article.
+        """
+        todo = [a for a in ref.article_ids if not (self.resume and a in self.done)]
+        if not todo:
+            return
+        sections = await asyncio.gather(
+            *(self.client.product_sections(a) for a in todo), return_exceptions=True)
+        ok: list[tuple[str, dict[str, Any]]] = []
+        for aid, section in zip(todo, sections):
+            if isinstance(section, Exception):
+                self.failed[aid] = f"{type(section).__name__}: {section}"
+                _log(f"  FAIL {aid}: {type(section).__name__}")
+            else:
+                ok.append((aid, section))
+        if not ok:
+            self._save_state()
+            return
+
+        hero = None
+        if ref.product_id:
+            try:
+                hero = await self.client.product_hero(ref.product_id)
+            except Exception as exc:  # noqa: BLE001
+                _log(f"  hero failed for {ref.product_id}: {type(exc).__name__}")
+
+        union = sorted({pid for _, section in ok for pid in collect_part_ids(section)})
+        rows = await self.client.parts(union)
+        parts = {pid: val for pid, val in rows.items() if val is not None}
+
+        for aid, section in ok:
+            part_ids = collect_part_ids(section)
+            errors = {pid: "not returned" for pid in part_ids if parts.get(pid) is None}
+            plots = build_plots(section)
+            if mode == "category":
+                write_category_article(self.out, section, category=category or "other",
+                                       plots=plots, parts=parts, errors=errors)
+            else:
+                write_article(self.out, section, product=build_product(section, hero),
+                              plots=plots, parts=parts, errors=errors, layout=self.layout)
+            self.done.add(aid)
+            self.failed.pop(aid, None)
+            _log(f"  ok {aid}: {len(part_ids)} parts, {len(errors)} missing")
+        self._save_state()
+
     # ------------------------------------------------------------------ batches
     async def run_refs(self, refs: list[ProductRef], *, category: str | None, mode: str,
                        limit: int = 0) -> None:
@@ -118,15 +171,13 @@ class Runner:
 
         async def one(ref: ProductRef) -> None:
             async with sem:
-                for aid in ref.article_ids:
-                    try:
-                        await self.scrape_article(
-                            aid, product_id=ref.product_id,
-                            category=category, mode=mode)
-                    except Exception as exc:  # noqa: BLE001
+                try:
+                    await self.scrape_product(ref, category=category, mode=mode)
+                except Exception as exc:  # noqa: BLE001
+                    for aid in ref.article_ids:
                         self.failed[aid] = f"{type(exc).__name__}: {exc}"
-                        self._save_state()
-                        _log(f"  FAIL {aid}: {type(exc).__name__}: {exc}")
+                    self._save_state()
+                    _log(f"  FAIL {ref.slug}: {type(exc).__name__}: {exc}")
 
         await asyncio.gather(*(one(r) for r in refs))
 
@@ -154,9 +205,12 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--out", default="out")
         sp.add_argument("--layout", choices=("canonical", "by_plot", "both"), default="both")
         sp.add_argument("--resume", action="store_true")
-        sp.add_argument("--concurrency", type=int, default=2)
-        sp.add_argument("--rps", type=float, default=2.0)
-        sp.add_argument("--batch-size", type=int, default=20)
+        sp.add_argument("--concurrency", type=int, default=8,
+                        help="products scraped in parallel (8 = ~180 MB RSS)")
+        sp.add_argument("--rps", type=float, default=50.0)
+        sp.add_argument("--batch-size", type=int, default=100)
+        sp.add_argument("--workers", type=int, default=16,
+                        help="parallel part batches (measured safe up to 16)")
         sp.add_argument("--site", default=SITE)
         sp.add_argument("--limit", type=int, default=0,
                         help="stop after N products (0 = no cap)")
@@ -169,7 +223,8 @@ async def main_async(args: argparse.Namespace) -> int:
     out = Path(args.out)
     runner = Runner(out, layout=args.layout, resume=args.resume,
                     concurrency=args.concurrency, rps=args.rps,
-                    batch_size=args.batch_size, site=args.site, limit=args.limit)
+                    batch_size=args.batch_size, site=args.site, limit=args.limit,
+                    workers=args.workers)
     try:
         if args.command == "article":
             if not args.target:
