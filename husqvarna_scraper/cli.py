@@ -54,6 +54,7 @@ class Runner:
         self.state_path = out / "_state.json"
         self.limit = limit
         self.parts_only = parts_only
+        self.claimed: set[str] = set()
         self.part_cache: dict[str, dict[str, Any]] = {}
         self.state: dict[str, Any] = self._load_state()
         self.done: set[str] = set(self.state.get("done", []))
@@ -122,7 +123,11 @@ class Runner:
         turns a product from "6 sequential scrapes" into "2 parallel rounds": variants share
         ~57% of their parts, so the union is barely larger than one article.
         """
-        todo = [a for a in ref.article_ids if not (self.resume and a in self.done)]
+        # A product appears in several leaf pages; claim articles once so the same work is
+        # never done twice. No await between the check and the add, so this is atomic.
+        todo = [a for a in ref.article_ids
+                if a not in self.claimed and not (self.resume and a in self.done)]
+        self.claimed.update(todo)
         if not todo:
             return
         sections = await asyncio.gather(
