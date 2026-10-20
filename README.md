@@ -81,8 +81,17 @@ cd /srv/husqvarna/app && python3 -m venv .venv && .venv/bin/pip install -e .
 ```
 
 `deploy/husqvarna-scraper.service` + `deploy/husqvarna-scraper.timer` run a nightly
-`all --resume`; `deploy/run.sh` is the same thing without systemd. Adjust `--rps` to stay a
-polite client: 2 requests/second completes the full catalogue in roughly one hour per run.
+`all --resume`; `deploy/run.sh` is the same thing without systemd.
+
+Sizing, measured rather than guessed: the reference article costs 9 requests (155 parts),
+but demolition robots run 410–628 parts each, i.e. 21–32 requests per article. A full
+catalogue is ~2,461 articles x ~31 requests ≈ **76,000 requests**. A live smoke run answered
+185 requests in 4.6 minutes (0.68 req/s, 15.3 MB), which puts a full pass at **~31 hours** —
+so the timer is nightly with `--resume`, not a single sitting. Raise `--rps` only until the
+endpoint starts returning 429; the client backs off and retries.
+
+Output size scales the same way: 6 articles of one demolition robot produced 3,387 part
+files.
 
 ## Fields that are not portal fields
 
