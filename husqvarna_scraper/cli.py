@@ -44,13 +44,14 @@ def _log(msg: str) -> None:
 
 class Runner:
     def __init__(self, out: Path, *, layout: str, resume: bool, concurrency: int, rps: float,
-                 batch_size: int, site: str) -> None:
+                 batch_size: int, site: str, limit: int = 0) -> None:
         self.out = out
         self.layout = layout
         self.resume = resume
         self.concurrency = concurrency
         self.client = HusqClient(site=site, rps=rps, batch_size=batch_size)
         self.state_path = out / "_state.json"
+        self.limit = limit
         self.state: dict[str, Any] = self._load_state()
         self.done: set[str] = set(self.state.get("done", []))
         self.failed: dict[str, str] = dict(self.state.get("failed", {}))
@@ -109,7 +110,10 @@ class Runner:
         _log(f"  ok {article_id}: {len(part_ids)} parts, {len(errors)} missing")
 
     # ------------------------------------------------------------------ batches
-    async def run_refs(self, refs: list[ProductRef], *, category: str | None, mode: str) -> None:
+    async def run_refs(self, refs: list[ProductRef], *, category: str | None, mode: str,
+                       limit: int = 0) -> None:
+        if limit:
+            refs = refs[:limit]
         sem = asyncio.Semaphore(self.concurrency)
 
         async def one(ref: ProductRef) -> None:
@@ -136,7 +140,7 @@ class Runner:
                     f"{leaf.title[:30]:30s} -> {n if not err else 'ERR ' + err}"))
         articles = sum(len(r.article_ids) for r in refs)
         _log(f"{name}: {len(refs)} products, {articles} articles")
-        await self.run_refs(refs, category=name, mode="category")
+        await self.run_refs(refs, category=name, mode="category", limit=self.limit)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -154,6 +158,8 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--rps", type=float, default=2.0)
         sp.add_argument("--batch-size", type=int, default=20)
         sp.add_argument("--site", default=SITE)
+        sp.add_argument("--limit", type=int, default=0,
+                        help="stop after N products (0 = no cap)")
         sp.add_argument("--name", default=None,
                         help="category to run, e.g. \"Diamond tools\" (case-insensitive substring)")
     return p
@@ -163,7 +169,7 @@ async def main_async(args: argparse.Namespace) -> int:
     out = Path(args.out)
     runner = Runner(out, layout=args.layout, resume=args.resume,
                     concurrency=args.concurrency, rps=args.rps,
-                    batch_size=args.batch_size, site=args.site)
+                    batch_size=args.batch_size, site=args.site, limit=args.limit)
     try:
         if args.command == "article":
             if not args.target:
