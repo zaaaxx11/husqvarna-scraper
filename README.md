@@ -1,11 +1,11 @@
 # husqvarna-scraper
 
 Automates what used to be a manual job: walk the Husqvarna B2B catalogue, open every
-product, pull its IPL diagrams and every spare part, and write the result in the same
-folder/file shape as the existing archives.
+product, pull its IPL diagrams and every spare part, and write the result in the folder
+shape of the existing archives.
 
-No browser, no login, no Places-style API key. The portal itself serves the data through one
-GraphQL endpoint, and the catalogue tree is embedded in `/us/products/`.
+No browser, no login, no API key. The portal serves everything through one GraphQL endpoint,
+and the catalogue tree is embedded in `/us/products/`.
 
 ## The catalogue
 
@@ -26,8 +26,8 @@ prop. Measured 2026-10-20:
                                      32 product types, 73 leaf links
 ```
 
-Those 73 leaf pages currently render **579 distinct products** carrying **1,931 distinct
-article numbers** (2,461 if related-product carousels are counted, which the scraper does not) (one product can have many articles: variants, voltages, bar lengths).
+Those 73 leaf pages render **579 distinct products** carrying **1,931 distinct articles**
+(one product has many articles: variants, voltages, bar lengths).
 
 > `totalCount` on a leaf page is the count of its *parent* type, not of that leaf — 132
 > repeats on every diamond-blade leaf while the leaf itself renders 11–130 products. The
@@ -36,8 +36,7 @@ article numbers** (2,461 if related-product carousels are counted, which the scr
 
 ## Output
 
-One layout, copied from the archives — every part sits in the folder of the diagram it
-belongs to:
+One layout: every part sits in the folder of the diagram it belongs to.
 
 ```
 article/<article>/
@@ -49,20 +48,25 @@ article/<article>/
 ```
 
 `--parts-only` (or the `category` command) drops `product.json` and adds
-`related_products.json` + `missing_part_ids`, which is the shape of the category archives.
+`related_products.json` + `missing_part_ids`, matching the category archives.
 
-Per article the run costs **1 + ceil(parts/20)** requests (1 product query + batched part
-queries). A 155-part machine is 9 requests.
+A part that only appears in the spare-parts list — never on a diagram — has no folder to sit
+in, so it is listed in `_part_list.json` and `_errors.json` but gets no file. The reference
+archives behave the same way (5 of 155 parts in their own `968424101` export).
+
+Per article the run costs **1 + ceil(parts/100)** requests: one product query plus batched
+part queries. A 155-part machine is 3 requests.
 
 ## Usage (one command)
 
 ```bash
 ./husq                     # usage
 ./husq install             # once: venv + dependencies
-./husq one 968424101       # one article, full output
+./husq one 968424101       # one article
 ./husq cat "Diamond tools" # one category
 ./husq all                 # the whole catalogue
-./husq cmp ref.zip out/    # diff an output tree against an archive
+./husq zip out/            # archive (and delete) an output tree
+./husq cmp ref.zip out.zip # diff against an archive
 ```
 
 Template:
@@ -85,31 +89,17 @@ Real examples:
 
 ```bash
 ./husq install
-OUT=~/husq-data ./husq all                       # full run, resumable
-CONC=16 WORKERS=32 ./husq all                    # faster, ~210 MB RSS
-./husq cat "Remote demolition"                   # 29 products, 233 articles
-./husq one 968424101 529663903                   # two articles
-./husq cmp ~/archive/by_plot.zip ./out
-./husq cmp ~/archive/other.zip ./out             # parts-only reference
+OUT=~/husq-data ./husq all                 # full run
+KEEP_RAW=1 ./husq all                      # keep the tree (resumable)
+CONC=16 WORKERS=32 ./husq all              # faster, ~210 MB RSS
+./husq cat "Remote demolition"
+./husq one 968424101 529663903
+./husq cmp ~/archive/other.zip ./out.zip   # parts-only reference
 ```
 
-`./husq one` writes both layouts; `./husq all` and `./husq cat` write the full product
-output (with `product.json`). Add `--parts-only` to either for the category layout.
-
-A finished article is recorded in `<out>/_state.json`; every command runs with `--resume`,
-so re-running continues instead of starting over. Per-part failures land in `_errors.json`
+Every run is resumable through `<out>/_state.json` — but the default auto-zip **deletes the
+tree**, so resuming only works with `KEEP_RAW=1`. Per-part failures land in `_errors.json`
 and are also listed as `missing_part_ids` — never silently dropped.
-
-## Run it on a server
-
-```bash
-sudo install -d /srv/husqvarna
-sudo git clone https://github.com/<you>/husqvarna-scraper /srv/husqvarna/app
-cd /srv/husqvarna/app && python3 -m venv .venv && .venv/bin/pip install -e .
-```
-
-`deploy/husqvarna-scraper.service` + `deploy/husqvarna-scraper.timer` run a nightly
-`all --resume`; `deploy/run.sh` is the same thing without systemd.
 
 ## Speed, measured
 
@@ -131,17 +121,39 @@ Same 6-article demolition robot, same machine:
 | workers 32, 8 products parallel | 161 | 65 s | 180 MB |
 | workers 32, 16 products parallel | 274 | 78.6 s | 212 MB |
 
-Throughput: 12.2 products/minute at `--concurrency 16`, 7.4 at 8. Those numbers are the
-*worst* products in the catalogue (410–660 parts each); the average article carries ~136.
-
-End-to-end check (2026-10-20): the **entire catalogue** — 1,931 articles, 164,781 part
-rows, 384,134 files — finished in **6 min 56 s**, with 3,268 requests, 420 MB downloaded,
-4.28 GB written and zero failed articles. Peak RSS at `--concurrency 12` stays around
-200 MB.
+End-to-end, the whole catalogue — 1,931 articles, 164,781 part rows — finished in
+**6 min 56 s**, with 3,268 requests, 420 MB downloaded, 4 retries and **zero failed
+articles** at `--concurrency 12`. Peak RSS stays around 200 MB.
 
 Budget ~13 MB of RSS per concurrent product above a ~45 MB base (`--concurrency 8` ≈ 180 MB,
-`--concurrency 16` ≈ 212 MB). Raise `--rps` only until the endpoint returns 429; the client
-backs off and retries.
+`--concurrency 16` ≈ 212 MB). `--rps 50` never triggered a 429 in that run; the client still
+backs off and retries if one appears.
+
+## Disk
+
+The catalogue is hundreds of thousands of small JSON files, and deflate eats them: **4.9×
+to 5.2×** smaller with no loss. `./husq` therefore archives to `<out>.zip` when a run
+finishes and removes the raw tree, unless `KEEP_RAW=1`.
+
+| measured sample | files | tree | zip | time |
+|---|---|---|---|---|
+| one article (`968424101`, 155 parts) | 173 | 1.6 MB | 338 KB | <1 s |
+| one category (`Remote demolition`, 74 articles) | 15,252 | 140 MB | 28.7 MB | 4.5 s |
+| full catalogue (two-layout build, before the layout change) | 384,134 | 4.0 GB | 783 MiB | 4 min |
+
+`./husq zip <dir> [dest.zip]` archives an existing tree, and `./husq cmp` accepts a zip on
+either side — so a compressed output can still be diffed.
+
+## Run it on a server
+
+```bash
+sudo install -d /srv/husqvarna
+sudo git clone https://github.com/<you>/husqvarna-scraper /srv/husqvarna/app
+cd /srv/husqvarna/app && python3 -m venv .venv && .venv/bin/pip install -e .
+```
+
+`deploy/husqvarna-scraper.service` + `deploy/husqvarna-scraper.timer` run a nightly
+`all --resume`; `deploy/run.sh` is the same thing without systemd.
 
 ## Fields that are not portal fields
 
@@ -153,26 +165,14 @@ defaults. They are never filled with invented values.
 ## Honest limits
 
 * `totalCount` is unusable (parent count) — only rendered products are captured.
-* Leaf pages render a subset of their parent type; overlapping leaves are merged by product
-  GUID, so the product count above is already de-duplicated.
+* Leaf pages overlap; products are merged by GUID and articles are claimed once, so nothing
+  is scraped twice. The published counts above are already de-duplicated.
+* `product.json → images` carries the portal's main image only. The archives' 6-image gallery
+  comes from Aprimo (`getAprimoImageURL(imageId)`), and those asset ids are not exposed by any
+  product query — so the gallery cannot be reconstructed without guessing.
 * Part availability is whatever the portal answers. A part that returns nothing is recorded
-  as `available: false` and `"not returned"`, which is exactly what the old archives did
-  (39 of 3,712 files in the reference archive).
-* Rate limit: the public endpoint tolerates ~2 req/s comfortably; higher rates start
-  returning 429 and the client backs off.
-
-## Disk
-
-A full run is 384,134 small JSON files — 4.0 GB on disk. `./husq all` therefore archives the
-tree to `<out>.zip` when it finishes and deletes the raw tree, unless `KEEP_RAW=1`:
-
-| | files | size | time |
-|---|---|---|---|
-| output tree | 384,134 | 4.0 GB | — |
-| `out.zip` | 384,134 | **783 MiB** (821 MB) | 4 min |
-
-5.2x smaller, CRC-verified. `./husq zip <dir> [dest.zip]` archives an existing tree, and
-`./husq cmp` accepts a zip on either side, so a compressed output can still be diffed.
+  as `available: false` and `"not returned"`, exactly as the old archives did.
+* Parts that appear on no diagram get no file (see Output).
 
 ## Tests
 
@@ -181,4 +181,4 @@ tree to `<out>.zip` when it finishes and deletes the raw tree, unless `KEEP_RAW=
 ```
 
 10 tests, no network: taxonomy parsing, GUID/article pairing, part-id ordering, reference
-provenance, and both output layouts.
+provenance, and the by_plot layout.
