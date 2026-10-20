@@ -1,0 +1,14 @@
+[Unit]
+Description=Husqvarna catalogue scrape
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=husqvarna
+WorkingDirectory=/srv/husqvarna/app
+Environment=APP_DIR=/srv/husqvarna/app
+Environment=OUT_DIR=/srv/husqvarna/out
+ExecStart=/srv/husqvarna/app/deploy/run.sh
+TimeoutStartSec=6h
+Nice=10

@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "husqvarna-scraper"
+version = "0.1.0"
+description = "Scrape Husqvarna portal products, IPL diagrams and spare parts"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = ["httpx>=0.27"]
+
+[project.scripts]
+husqvarna-scraper = "husqvarna_scraper.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["husqvarna_scraper*"]
