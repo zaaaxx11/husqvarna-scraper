@@ -218,6 +218,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="products scraped in parallel (8 = ~180 MB RSS)")
         sp.add_argument("--rps", type=float, default=50.0)
         sp.add_argument("--batch-size", type=int, default=100)
+        sp.add_argument("--zip", action="store_true",
+                        help="archive the output to <out>.zip when the run finishes")
+        sp.add_argument("--keep-raw", action="store_true",
+                        help="keep the unzipped tree as well (default: remove after zipping)")
         sp.add_argument("--parts-only", action="store_true",
                         help="category layout: plot folders only, no product.json")
         sp.add_argument("--workers", type=int, default=16,
@@ -227,6 +231,11 @@ def build_parser() -> argparse.ArgumentParser:
                         help="stop after N products (0 = no cap)")
         sp.add_argument("--name", default=None,
                         help="category to run, e.g. \"Diamond tools\" (case-insensitive substring)")
+
+    zip_p = sub.add_parser("zip", help="archive an existing output tree")
+    zip_p.add_argument("--out", default="out", help="output tree to archive")
+    zip_p.add_argument("--dest", default=None, help="archive path (default: <out>.zip)")
+    zip_p.add_argument("--keep-raw", action="store_true", help="keep the tree after zipping")
 
     cmp_p = sub.add_parser("compare", help="diff an output tree against a reference zip/folder")
     cmp_p.add_argument("--reference", "-r", required=True, help="reference .zip or folder")
@@ -238,6 +247,19 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 async def main_async(args: argparse.Namespace) -> int:
+    if args.command == "zip":
+        from .archive import describe, zip_tree
+
+        src = Path(args.out)
+        if not src.exists():
+            print(f"no such tree: {src}", file=sys.stderr)
+            return 2
+        dest = Path(args.dest) if args.dest else src.with_suffix(".zip")
+        stats = zip_tree(src, dest, drop_source=not args.keep_raw,
+                         on_progress=lambda i, n: _log(f"  zipped {i:,}/{n:,}"))
+        print(describe(stats, dest))
+        return 0
+
     if args.command == "compare":
         from .compare import compare, render
 
@@ -269,6 +291,14 @@ async def main_async(args: argparse.Namespace) -> int:
         stats = runner.client.stats
         _log(f"requests={stats['requests']} bytes={stats['bytes']} retries={stats['retries']}")
         await runner.close()
+
+    if getattr(args, "zip", False):
+        from .archive import describe, zip_tree
+
+        dest = out.with_suffix(".zip")
+        stats = zip_tree(out, dest, drop_source=not getattr(args, "keep_raw", False),
+                         on_progress=lambda i, n: _log(f"  zipped {i:,}/{n:,}"))
+        print(describe(stats, dest))
     return 0
 
 

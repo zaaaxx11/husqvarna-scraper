@@ -75,10 +75,11 @@ Template:
   one <article> [<more>]  scrape specific article numbers
   cat "<category>"        scrape one category
   all                     scrape the entire catalogue
-  cmp <ref> <out>         compare output against a .zip reference
+  zip [dir] [file.zip]    archive an output tree (then delete the tree)
+  cmp <ref> <out>         compare output against a .zip (either side may be a zip)
   where                   show paths and defaults
 
-env (optional): OUT=dir LAYOUT=both CONC=12 WORKERS=16 RPS=50
+env (optional): OUT=dir LAYOUT=both CONC=12 WORKERS=16 RPS=50 KEEP_RAW=1
 ```
 
 Real examples:
@@ -160,6 +161,19 @@ defaults. They are never filled with invented values.
   (39 of 3,712 files in the reference archive).
 * Rate limit: the public endpoint tolerates ~2 req/s comfortably; higher rates start
   returning 429 and the client backs off.
+
+## Disk
+
+A full run is 384,134 small JSON files — 4.0 GB on disk. `./husq all` therefore archives the
+tree to `<out>.zip` when it finishes and deletes the raw tree, unless `KEEP_RAW=1`:
+
+| | files | size | time |
+|---|---|---|---|
+| output tree | 384,134 | 4.0 GB | — |
+| `out.zip` | 384,134 | **783 MiB** (821 MB) | 4 min |
+
+5.2x smaller, CRC-verified. `./husq zip <dir> [dest.zip]` archives an existing tree, and
+`./husq cmp` accepts a zip on either side, so a compressed output can still be diffed.
 
 ## Tests
 

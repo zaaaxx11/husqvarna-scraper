@@ -18,6 +18,9 @@ CONC="${CONC:-12}"
 WORKERS="${WORKERS:-16}"
 RPS="${RPS:-50}"
 LAYOUT="${LAYOUT:-both}"
+KEEP_RAW="${KEEP_RAW:-0}"
+ZIPFLAG="--zip"
+[ "$KEEP_RAW" = "1" ] && ZIPFLAG=""
 
 usage() {
   cat <<'TXT'
@@ -31,11 +34,13 @@ COMMANDS
   one <article> [<more>]  scrape specific article numbers
   cat "<category>"        scrape one category, e.g. "Diamond tools"
   all                     scrape the entire catalogue
+  zip [dir] [file.zip]    archive an output tree (then delete the tree)
   cmp <ref> <out>         compare an output folder against a .zip reference
   where                   show paths and current defaults
 
 OPTIONS (env, optional)
   OUT=dir                 output folder            (default: ./out)
+  KEEP_RAW=1              keep the unzipped tree (default: zip, then delete)
   LAYOUT=canonical|by_plot|both                     (default: both)
   CONC=12 WORKERS=16 RPS=50                         (speed / politeness)
 
@@ -74,17 +79,20 @@ case "$cmd" in
     ;;
   one)
     [ $# -gt 0 ] || { echo "usage: ./husq one <article> [<more>]" >&2; exit 2; }
-    run article "$@" --out "$OUT" --layout "$LAYOUT" --resume \
+    run article "$@" --out "$OUT" --layout "$LAYOUT" --resume $ZIPFLAG \
         --concurrency "$CONC" --workers "$WORKERS" --rps "$RPS"
     ;;
   cat|category)
     [ $# -gt 0 ] || { echo 'usage: ./husq cat "<category>"' >&2; exit 2; }
-    run category --name "$*" --out "$OUT" --resume \
+    run category --name "$*" --out "$OUT" --resume $ZIPFLAG \
         --concurrency "$CONC" --workers "$WORKERS" --rps "$RPS"
     ;;
   all)
-    run all --out "$OUT" --resume --layout "$LAYOUT" \
+    run all --out "$OUT" --resume --layout "$LAYOUT" $ZIPFLAG \
         --concurrency "$CONC" --workers "$WORKERS" --rps "$RPS" "$@"
+    ;;
+  zip)
+    run zip --out "${1:-$OUT}" ${2:+--dest "$2"}
     ;;
   cmp|compare)
     [ $# -eq 2 ] || { echo "usage: ./husq cmp <reference.zip|dir> <output-dir>" >&2; exit 2; }

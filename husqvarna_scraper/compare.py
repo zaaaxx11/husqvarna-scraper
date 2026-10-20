@@ -64,14 +64,15 @@ def _key(rel: str) -> str | None:
 
 def compare(reference: Path, against: Path, *, include_raw: bool = False) -> dict[str, Any]:
     root, tmp = _prepare(reference)
+    got_root, got_tmp = _prepare(against) if against.suffix.lower() == ".zip" else (against, None)
     try:
         ref_files = {
             key: p for p in root.rglob("*") if p.is_file()
             if (key := _key(p.relative_to(root).as_posix()))
         }
         got_files = {
-            key: p for p in against.rglob("*") if p.is_file()
-            if (key := _key(p.relative_to(against).as_posix()))
+            key: p for p in got_root.rglob("*") if p.is_file()
+            if (key := _key(p.relative_to(got_root).as_posix()))
         }
 
         missing = sorted(set(ref_files) - set(got_files))
@@ -129,6 +130,8 @@ def compare(reference: Path, against: Path, *, include_raw: bool = False) -> dic
     finally:
         if tmp is not None:
             tmp.cleanup()
+        if got_tmp is not None:
+            got_tmp.cleanup()
 
 
 def render(report: dict[str, Any]) -> str:
