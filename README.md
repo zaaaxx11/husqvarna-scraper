@@ -26,8 +26,8 @@ prop. Measured 2026-10-20:
                                      32 product types, 73 leaf links
 ```
 
-Those 73 leaf pages currently render **579 distinct products** carrying **2,461 distinct
-article numbers** (one product can have many articles: variants, voltages, bar lengths).
+Those 73 leaf pages currently render **579 distinct products** carrying **1,931 distinct
+article numbers** (2,461 if related-product carousels are counted, which the scraper does not) (one product can have many articles: variants, voltages, bar lengths).
 
 > `totalCount` on a leaf page is the count of its *parent* type, not of that leaf — 132
 > repeats on every diamond-blade leaf while the leaf itself renders 11–130 products. The
@@ -134,10 +134,10 @@ Same 6-article demolition robot, same machine:
 Throughput: 12.2 products/minute at `--concurrency 16`, 7.4 at 8. Those numbers are the
 *worst* products in the catalogue (410–660 parts each); the average article carries ~136.
 
-End-to-end check: the entire **Remote demolition** category — 29 products, 233 articles,
-3,404 part rows — finished in **88.4 s** with 402 requests, 64 MB downloaded and 218 MB peak
-RSS. That category is 9.5% of the catalogue's articles and by far its heaviest, so a full
-pass extrapolates to **~15–25 minutes** and roughly 2 GB of traffic, not 31 hours.
+End-to-end check (2026-10-20): the **entire catalogue** — 1,931 articles, 164,781 part
+rows, 384,134 files — finished in **6 min 56 s**, with 3,268 requests, 420 MB downloaded,
+4.28 GB written and zero failed articles. Peak RSS at `--concurrency 12` stays around
+200 MB.
 
 Budget ~13 MB of RSS per concurrent product above a ~45 MB base (`--concurrency 8` ≈ 180 MB,
 `--concurrency 16` ≈ 212 MB). Raise `--rps` only until the endpoint returns 429; the client
