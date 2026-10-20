@@ -1,6 +1,6 @@
 """Command line entry point.
 
-    husqvarna-scraper article 968424101 --out out --layout both
+    husqvarna-scraper article 968424101 --out out
     husqvarna-scraper category https://portal.husqvarnagroup.com/us/diamond-blades/ --name diamond-blades
     husqvarna-scraper all --out out --resume
 
@@ -43,11 +43,10 @@ def _log(msg: str) -> None:
 
 
 class Runner:
-    def __init__(self, out: Path, *, layout: str, resume: bool, concurrency: int, rps: float,
+    def __init__(self, out: Path, *, resume: bool, concurrency: int, rps: float,
                  batch_size: int, site: str, limit: int = 0, workers: int = 16,
                  parts_only: bool = False) -> None:
         self.out = out
-        self.layout = layout
         self.resume = resume
         self.concurrency = concurrency
         self.client = HusqClient(site=site, rps=rps, batch_size=batch_size, workers=workers)
@@ -108,7 +107,7 @@ class Runner:
         else:
             product = build_product(sections, hero)
             write_article(self.out, sections, product=product, plots=plots,
-                          parts=parts, errors=errors, layout=self.layout)
+                          parts=parts, errors=errors)
         self.done.add(article_id)
         self.failed.pop(article_id, None)
         self._save_state()
@@ -163,7 +162,7 @@ class Runner:
                                        plots=plots, parts=parts, errors=errors)
             else:
                 write_article(self.out, section, product=build_product(section, hero),
-                              plots=plots, parts=parts, errors=errors, layout=self.layout)
+                              plots=plots, parts=parts, errors=errors)
             self.done.add(aid)
             self.failed.pop(aid, None)
             _log(f"  ok {aid}: {len(part_ids)} parts, {len(errors)} missing")
@@ -212,7 +211,6 @@ def build_parser() -> argparse.ArgumentParser:
         sp = sub.add_parser(name)
         sp.add_argument("target", nargs="*", help="article ids, or a category URL")
         sp.add_argument("--out", default="out")
-        sp.add_argument("--layout", choices=("canonical", "by_plot", "both"), default="both")
         sp.add_argument("--resume", action="store_true")
         sp.add_argument("--concurrency", type=int, default=8,
                         help="products scraped in parallel (8 = ~180 MB RSS)")
@@ -270,7 +268,7 @@ async def main_async(args: argparse.Namespace) -> int:
             print(f"\nreport written to {args.json}")
         return 0
     out = Path(args.out)
-    runner = Runner(out, layout=args.layout, resume=args.resume,
+    runner = Runner(out, resume=args.resume,
                     concurrency=args.concurrency, rps=args.rps,
                     batch_size=args.batch_size, site=args.site, limit=args.limit,
                     workers=args.workers,

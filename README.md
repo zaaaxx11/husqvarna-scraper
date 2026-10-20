@@ -36,21 +36,20 @@ article numbers** (2,461 if related-product carousels are counted, which the scr
 
 ## Output
 
-Three layouts, copied from the archives — not invented:
+One layout, copied from the archives — every part sits in the folder of the diagram it
+belongs to:
 
 ```
-canonical                      by_plot                        category (parts-only)
-article/<article>/             article/<article>/             article/<article>/
-├── product.json               ├── <PLOT>/                     ├── _part_list.json   (+category, +missing_part_ids)
-├── _part_list.json            │   ├── _category.json          ├── _errors.json
-├── _errors.json               │   └── <part>.json             ├── related_products.json
-├── parts/<part>.json          └── ...                         └── <PLOT>/
-└── plots/<PLOT>.json                                             ├── _category.json
-                                                                  └── <part>.json
+article/<article>/
+├── product.json            product-level data (name, price, intro, variants)
+├── _part_list.json         every part id, in ascending article order
+├── _errors.json            parts the portal did not return
+├── <PLOT>/_category.json   the diagram plus its parts (position, quantity, available)
+└── <PLOT>/<part>.json      one file per part
 ```
 
-`--layout canonical|by_plot|both` selects the first two; the `category` command always uses
-the parts-only layout (the archives have no `product.json` in that mode).
+`--parts-only` (or the `category` command) drops `product.json` and adds
+`related_products.json` + `missing_part_ids`, which is the shape of the category archives.
 
 Per article the run costs **1 + ceil(parts/20)** requests (1 product query + batched part
 queries). A 155-part machine is 9 requests.
@@ -79,7 +78,7 @@ Template:
   cmp <ref> <out>         compare output against a .zip (either side may be a zip)
   where                   show paths and defaults
 
-env (optional): OUT=dir LAYOUT=both CONC=12 WORKERS=16 RPS=50 KEEP_RAW=1
+env (optional): OUT=dir CONC=12 WORKERS=16 RPS=50 KEEP_RAW=1
 ```
 
 Real examples:
@@ -90,7 +89,7 @@ OUT=~/husq-data ./husq all                       # full run, resumable
 CONC=16 WORKERS=32 ./husq all                    # faster, ~210 MB RSS
 ./husq cat "Remote demolition"                   # 29 products, 233 articles
 ./husq one 968424101 529663903                   # two articles
-./husq cmp ~/archive/article_968424101_canonical.zip ./out
+./husq cmp ~/archive/by_plot.zip ./out
 ./husq cmp ~/archive/other.zip ./out             # parts-only reference
 ```
 

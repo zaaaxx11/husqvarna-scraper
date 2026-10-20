@@ -1,10 +1,8 @@
-"""Turn portal answers into the three output layouts.
+"""Turn portal answers into the operator's output layout.
 
-The layouts were reverse-engineered from the operator's own archives, so the shapes here
-are copied, not designed:
+The shapes were reverse-engineered from their own archives, so they are copied, not designed:
 
-  canonical   parts/<id>.json  + plots/<PLOT>.json    (plot lists part_file)
-  by_plot     <PLOT>/<id>.json + <PLOT>/_category.json (plot lists available)
+  by_plot     <PLOT>/<id>.json + <PLOT>/_category.json (plot lists `available`)
   category    same as by_plot, minus product.json, plus related_products.json
               and a _part_list.json carrying `category` + `missing_part_ids`
 
@@ -319,14 +317,18 @@ def write_article(
     plots: list[dict[str, Any]],
     parts: dict[str, dict[str, Any] | None],
     errors: dict[str, str],
-    layout: str = "both",
 ) -> None:
-    """canonical and/or by_plot for a single article."""
+    """One article, by_plot layout: product.json + one folder per diagram.
+
+    Parts live next to the diagram they belong to (`<PLOT>/<part>.json`), which is the only
+    layout the operator keeps. Parts that appear on no diagram are listed in
+    `_part_list.json` and `_errors.json` but have no folder to sit in.
+    """
     root = out_dir / "article" / str(article.get("id"))
     part_ids = collect_part_ids(article)
     refs_by_part = reference_index(plots)
     spares = spare_index(article)
-    pname = main_product_name(article, product if 'layout' in locals() else None)
+    pname = main_product_name(article, product)
 
     dump(root / "product.json", product)
     dump(root / "_errors.json", errors)
@@ -337,40 +339,21 @@ def write_article(
         "references": refs_by_part,
     })
 
-    if layout in ("canonical", "both"):
-        for pid in part_ids:
-            if parts.get(pid) is None:
-                continue  # recorded in _errors.json; the archive writes no file for it
+    for plot in plots:
+        folder = root / plot_slug(plot["plot_name"])
+        rows = []
+        for row in plot["parts"]:
+            pid = row["article_number"]
             rec = part_record(parts.get(pid), refs=refs_by_part.get(pid, []),
-                              available=True,
+                              available=parts.get(pid) is not None,
                               product_article=article.get("id"), product_name=pname,
                               spare_meta=spares.get(pid))
             rec.pop("available", None)
-            dump(root / "parts" / f"{pid}.json", rec)
-        for plot in plots:
-            rows = []
-            for row in plot["parts"]:
-                item = dict(row)
-                item["part_file"] = f"../parts/{row['article_number']}.json"
-                rows.append(item)
-            dump(root / "plots" / f"{plot_slug(plot['plot_name'])}.json", {**plot, "parts": rows})
-
-    if layout in ("by_plot", "both"):
-        for plot in plots:
-            folder = root / plot_slug(plot["plot_name"])
-            rows = []
-            for row in plot["parts"]:
-                pid = row["article_number"]
-                rec = part_record(parts.get(pid), refs=refs_by_part.get(pid, []),
-                                  available=parts.get(pid) is not None,
-                                  product_article=article.get("id"), product_name=pname,
-                                  spare_meta=spares.get(pid))
-                rec.pop("available", None)
-                dump(folder / f"{pid}.json", rec)
-                item = dict(row)
-                item["available"] = parts.get(pid) is not None
-                rows.append(item)
-            dump(folder / "_category.json", {**plot, "parts": rows})
+            dump(folder / f"{pid}.json", rec)
+            item = dict(row)
+            item["available"] = parts.get(pid) is not None
+            rows.append(item)
+        dump(folder / "_category.json", {**plot, "parts": rows})
 
 
 def write_category_article(
@@ -388,7 +371,7 @@ def write_category_article(
     missing = [pid for pid in part_ids if parts.get(pid) is None]
     refs_by_part = reference_index(plots)
     spares = spare_index(article)
-    pname = main_product_name(article, product if 'layout' in locals() else None)
+    pname = main_product_name(article)
 
     dump(root / "_part_list.json", {
         "main_product_article": article.get("id"),

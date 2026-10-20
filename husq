@@ -8,7 +8,7 @@
 #   ./husq all                  scrape the whole catalogue
 #   ./husq cmp ref.zip out/     diff an output against an archive
 #
-# Env knobs (rarely needed): CONC, WORKERS, RPS, OUT, LAYOUT
+# Env knobs (rarely needed): CONC, WORKERS, RPS, OUT, KEEP_RAW
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,7 +17,6 @@ OUT="${OUT:-$APP_DIR/out}"
 CONC="${CONC:-12}"
 WORKERS="${WORKERS:-16}"
 RPS="${RPS:-50}"
-LAYOUT="${LAYOUT:-both}"
 KEEP_RAW="${KEEP_RAW:-0}"
 ZIPFLAG="--zip"
 [ "$KEEP_RAW" = "1" ] && ZIPFLAG=""
@@ -41,8 +40,7 @@ COMMANDS
 OPTIONS (env, optional)
   OUT=dir                 output folder            (default: ./out)
   KEEP_RAW=1              keep the unzipped tree (default: zip, then delete)
-  LAYOUT=canonical|by_plot|both                     (default: both)
-  CONC=12 WORKERS=16 RPS=50                         (speed / politeness)
+    CONC=12 WORKERS=16 RPS=50                         (speed / politeness)
 
 EXAMPLES
   ./husq install
@@ -79,7 +77,7 @@ case "$cmd" in
     ;;
   one)
     [ $# -gt 0 ] || { echo "usage: ./husq one <article> [<more>]" >&2; exit 2; }
-    run article "$@" --out "$OUT" --layout "$LAYOUT" --resume $ZIPFLAG \
+    run article "$@" --out "$OUT" --resume $ZIPFLAG \
         --concurrency "$CONC" --workers "$WORKERS" --rps "$RPS"
     ;;
   cat|category)
@@ -88,7 +86,7 @@ case "$cmd" in
         --concurrency "$CONC" --workers "$WORKERS" --rps "$RPS"
     ;;
   all)
-    run all --out "$OUT" --resume --layout "$LAYOUT" $ZIPFLAG \
+    run all --out "$OUT" --resume $ZIPFLAG \
         --concurrency "$CONC" --workers "$WORKERS" --rps "$RPS" "$@"
     ;;
   zip)
@@ -105,7 +103,7 @@ case "$cmd" in
   where)
     echo "app    : $APP_DIR"
     echo "out    : $OUT"
-    echo "layout : $LAYOUT   concurrency=$CONC workers=$WORKERS rps=$RPS"
+    echo "output : by_plot   concurrency=$CONC workers=$WORKERS rps=$RPS"
     echo "python : $([ -x "$PY" ] && "$PY" -V 2>&1 || echo 'not installed yet (run ./husq install)')"
     ;;
   *)

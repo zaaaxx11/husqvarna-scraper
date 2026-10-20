@@ -140,18 +140,18 @@ def test_related_products_flatten_accessories_and_tools():
     assert payload["related_products"][0]["name"] == "WS 440 HF"
 
 
-def test_layout_writer_emits_both_shapes(tmp_path):
+def test_layout_writer_emits_plot_folders_only(tmp_path):
     from husqvarna_scraper.pipeline import build_product, write_article
 
     product = build_product(ARTICLE, None)
     write_article(tmp_path, ARTICLE, product=product, plots=build_plots(ARTICLE),
                   parts={"506349404": {"id": "506349404", "name": "TAP"}},
-                  errors={"501691702": "not returned"}, layout="both")
+                  errors={"501691702": "not returned"})
     root = tmp_path / "article" / "968424101"
     assert (root / "product.json").exists()
     assert json.loads((root / "_part_list.json").read_text())["part_ids"] == ["501691702", "506349404"]
-    assert (root / "parts" / "506349404.json").exists()
-    assert (root / "plots" / "HANDLE.json").exists()
-    assert (root / "HANDLE" / "_category.json").exists()
+    assert (root / "HANDLE" / "506349404.json").exists()
+    assert not (root / "parts").exists(), "canonical layout is gone"
+    assert not (root / "plots").exists(), "canonical layout is gone"
     plot = json.loads((root / "HANDLE" / "_category.json").read_text())
     assert plot["parts"][0]["available"] is True
