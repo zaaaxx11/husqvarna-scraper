@@ -1,0 +1,17 @@
+README.md
+pyproject.toml
+husqvarna_scraper/__init__.py
+husqvarna_scraper/__main__.py
+husqvarna_scraper/catalog.py
+husqvarna_scraper/cli.py
+husqvarna_scraper/client.py
+husqvarna_scraper/compare.py
+husqvarna_scraper/pipeline.py
+husqvarna_scraper/queries.py
+husqvarna_scraper.egg-info/PKG-INFO
+husqvarna_scraper.egg-info/SOURCES.txt
+husqvarna_scraper.egg-info/dependency_links.txt
+husqvarna_scraper.egg-info/entry_points.txt
+husqvarna_scraper.egg-info/requires.txt
+husqvarna_scraper.egg-info/top_level.txt
+tests/test_pipeline.py

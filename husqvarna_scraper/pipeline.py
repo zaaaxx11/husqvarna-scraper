@@ -339,8 +339,10 @@ def write_article(
 
     if layout in ("canonical", "both"):
         for pid in part_ids:
+            if parts.get(pid) is None:
+                continue  # recorded in _errors.json; the archive writes no file for it
             rec = part_record(parts.get(pid), refs=refs_by_part.get(pid, []),
-                              available=parts.get(pid) is not None,
+                              available=True,
                               product_article=article.get("id"), product_name=pname,
                               spare_meta=spares.get(pid))
             rec.pop("available", None)
@@ -349,7 +351,7 @@ def write_article(
             rows = []
             for row in plot["parts"]:
                 item = dict(row)
-                item["part_file"] = f"parts/{row['article_number']}.json"
+                item["part_file"] = f"../parts/{row['article_number']}.json"
                 rows.append(item)
             dump(root / "plots" / f"{plot_slug(plot['plot_name'])}.json", {**plot, "parts": rows})
 
@@ -363,6 +365,7 @@ def write_article(
                                   available=parts.get(pid) is not None,
                                   product_article=article.get("id"), product_name=pname,
                                   spare_meta=spares.get(pid))
+                rec.pop("available", None)
                 dump(folder / f"{pid}.json", rec)
                 item = dict(row)
                 item["available"] = parts.get(pid) is not None
@@ -407,6 +410,7 @@ def write_category_article(
                               available=parts.get(pid) is not None,
                               product_article=article.get("id"), product_name=pname,
                               spare_meta=spares.get(pid))
+            rec.pop("available", None)
             dump(folder / f"{pid}.json", rec)
             item = dict(row)
             item["available"] = parts.get(pid) is not None

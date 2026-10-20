@@ -1,0 +1,2 @@
+[console_scripts]
+husqvarna-scraper = husqvarna_scraper.cli:main

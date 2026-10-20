@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# husq — one entry point. Everything else is a default.
+#
+#   ./husq                      show usage
+#   ./husq install              create .venv and install (once)
+#   ./husq one 968424101        scrape one article
+#   ./husq cat "Diamond tools"  scrape one category (parts-only layout)
+#   ./husq all                  scrape the whole catalogue
+#   ./husq cmp ref.zip out/     diff an output against an archive
+#
+# Env knobs (rarely needed): CONC, WORKERS, RPS, OUT, LAYOUT
+set -euo pipefail
+
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PY="$APP_DIR/.venv/bin/python"
+OUT="${OUT:-$APP_DIR/out}"
+CONC="${CONC:-12}"
+WORKERS="${WORKERS:-16}"
+RPS="${RPS:-50}"
+LAYOUT="${LAYOUT:-both}"
+
+usage() {
+  cat <<'TXT'
+husq — Husqvarna catalogue scraper
+
+USAGE
+  ./husq <command> [args]
+
+COMMANDS
+  install                 create .venv + install dependencies (run once)
+  one <article> [<more>]  scrape specific article numbers
+  cat "<category>"        scrape one category, e.g. "Diamond tools"
+  all                     scrape the entire catalogue
+  cmp <ref> <out>         compare an output folder against a .zip reference
+  where                   show paths and current defaults
+
+OPTIONS (env, optional)
+  OUT=dir                 output folder            (default: ./out)
+  LAYOUT=canonical|by_plot|both                     (default: both)
+  CONC=12 WORKERS=16 RPS=50                         (speed / politeness)
+
+EXAMPLES
+  ./husq install
+  ./husq one 968424101
+  ./husq cat "Diamond tools"
+  ./husq all
+  ./husq cmp ~/archive/article_968424101_canonical.zip ./out
+TXT
+}
+
+ensure_env() {
+  if [ ! -x "$PY" ]; then
+    echo "first run: creating .venv and installing..." >&2
+    python3 -m venv "$APP_DIR/.venv"
+    "$APP_DIR/.venv/bin/pip" -q install -e "$APP_DIR"
+  fi
+}
+
+run() {
+  ensure_env
+  PYTHONPATH="$APP_DIR" "$PY" -m husqvarna_scraper "$@"
+}
+
+cmd="${1:-}"
+[ $# -gt 0 ] && shift || true
+
+case "$cmd" in
+  ""|-h|--help|help) usage ;;
+  install)
+    python3 -m venv "$APP_DIR/.venv"
+    "$APP_DIR/.venv/bin/pip" -q install -U pip
+    "$APP_DIR/.venv/bin/pip" -q install -e "$APP_DIR"
+    echo "installed. next: ./husq one 968424101"
+    ;;
+  one)
+    [ $# -gt 0 ] || { echo "usage: ./husq one <article> [<more>]" >&2; exit 2; }
+    run article "$@" --out "$OUT" --layout "$LAYOUT" --resume \
+        --concurrency "$CONC" --workers "$WORKERS" --rps "$RPS"
+    ;;
+  cat|category)
+    [ $# -gt 0 ] || { echo 'usage: ./husq cat "<category>"' >&2; exit 2; }
+    run category --name "$*" --out "$OUT" --resume \
+        --concurrency "$CONC" --workers "$WORKERS" --rps "$RPS"
+    ;;
+  all)
+    run all --out "$OUT" --resume --layout "$LAYOUT" \
+        --concurrency "$CONC" --workers "$WORKERS" --rps "$RPS" "$@"
+    ;;
+  cmp|compare)
+    [ $# -eq 2 ] || { echo "usage: ./husq cmp <reference.zip|dir> <output-dir>" >&2; exit 2; }
+    if [ -n "${JSON:-}" ]; then
+      run compare --reference "$1" --against "$2" --json "$JSON"
+    else
+      run compare --reference "$1" --against "$2"
+    fi
+    ;;
+  where)
+    echo "app    : $APP_DIR"
+    echo "out    : $OUT"
+    echo "layout : $LAYOUT   concurrency=$CONC workers=$WORKERS rps=$RPS"
+    echo "python : $([ -x "$PY" ] && "$PY" -V 2>&1 || echo 'not installed yet (run ./husq install)')"
+    ;;
+  *)
+    echo "unknown command: $cmd" >&2
+    usage
+    exit 2
+    ;;
+esac

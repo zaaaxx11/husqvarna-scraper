@@ -55,22 +55,50 @@ the parts-only layout (the archives have no `product.json` in that mode).
 Per article the run costs **1 + ceil(parts/20)** requests (1 product query + batched part
 queries). A 155-part machine is 9 requests.
 
-## Usage
+## Usage (one command)
 
 ```bash
-python -m venv .venv && .venv/bin/pip install -e .
-.venv/bin/husqvarna-scraper article 968424101 --out out --layout both
-.venv/bin/husqvarna-scraper category --name "Diamond tools" --out out
-.venv/bin/husqvarna-scraper all --out out --resume --concurrency 2 --rps 2
+./husq                     # usage
+./husq install             # once: venv + dependencies
+./husq one 968424101       # one article, full output
+./husq cat "Diamond tools" # one category
+./husq all                 # the whole catalogue
+./husq cmp ref.zip out/    # diff an output tree against an archive
 ```
 
-* `article` — one or more article numbers, full product output.
-* `category` — one of the 8 categories (case-insensitive substring), parts-only layout.
-* `all` — every leaf in the tree.
+Template:
 
-A finished article is recorded in `out/_state.json`; `--resume` skips it, so an interrupted
-run continues where it stopped. Per-part failures land in `_errors.json` and are also listed
-as `missing_part_ids` — never silently dropped.
+```
+./husq <command> [args]
+
+  install                 create .venv + install (run once)
+  one <article> [<more>]  scrape specific article numbers
+  cat "<category>"        scrape one category
+  all                     scrape the entire catalogue
+  cmp <ref> <out>         compare output against a .zip reference
+  where                   show paths and defaults
+
+env (optional): OUT=dir LAYOUT=both CONC=12 WORKERS=16 RPS=50
+```
+
+Real examples:
+
+```bash
+./husq install
+OUT=~/husq-data ./husq all                       # full run, resumable
+CONC=16 WORKERS=32 ./husq all                    # faster, ~210 MB RSS
+./husq cat "Remote demolition"                   # 29 products, 233 articles
+./husq one 968424101 529663903                   # two articles
+./husq cmp ~/archive/article_968424101_canonical.zip ./out
+./husq cmp ~/archive/other.zip ./out             # parts-only reference
+```
+
+`./husq one` writes both layouts; `./husq all` and `./husq cat` write the full product
+output (with `product.json`). Add `--parts-only` to either for the category layout.
+
+A finished article is recorded in `<out>/_state.json`; every command runs with `--resume`,
+so re-running continues instead of starting over. Per-part failures land in `_errors.json`
+and are also listed as `missing_part_ids` — never silently dropped.
 
 ## Run it on a server
 

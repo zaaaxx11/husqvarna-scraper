@@ -44,7 +44,8 @@ def _log(msg: str) -> None:
 
 class Runner:
     def __init__(self, out: Path, *, layout: str, resume: bool, concurrency: int, rps: float,
-                 batch_size: int, site: str, limit: int = 0, workers: int = 16) -> None:
+                 batch_size: int, site: str, limit: int = 0, workers: int = 16,
+                 parts_only: bool = False) -> None:
         self.out = out
         self.layout = layout
         self.resume = resume
@@ -52,6 +53,7 @@ class Runner:
         self.client = HusqClient(site=site, rps=rps, batch_size=batch_size, workers=workers)
         self.state_path = out / "_state.json"
         self.limit = limit
+        self.parts_only = parts_only
         self.part_cache: dict[str, dict[str, Any]] = {}
         self.state: dict[str, Any] = self._load_state()
         self.done: set[str] = set(self.state.get("done", []))
@@ -191,7 +193,9 @@ class Runner:
                     f"{leaf.title[:30]:30s} -> {n if not err else 'ERR ' + err}"))
         articles = sum(len(r.article_ids) for r in refs)
         _log(f"{name}: {len(refs)} products, {articles} articles")
-        await self.run_refs(refs, category=name, mode="category", limit=self.limit)
+        await self.run_refs(refs, category=name,
+                            mode="category" if self.parts_only else "article",
+                            limit=self.limit)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -209,6 +213,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="products scraped in parallel (8 = ~180 MB RSS)")
         sp.add_argument("--rps", type=float, default=50.0)
         sp.add_argument("--batch-size", type=int, default=100)
+        sp.add_argument("--parts-only", action="store_true",
+                        help="category layout: plot folders only, no product.json")
         sp.add_argument("--workers", type=int, default=16,
                         help="parallel part batches (measured safe up to 16)")
         sp.add_argument("--site", default=SITE)
@@ -216,15 +222,32 @@ def build_parser() -> argparse.ArgumentParser:
                         help="stop after N products (0 = no cap)")
         sp.add_argument("--name", default=None,
                         help="category to run, e.g. \"Diamond tools\" (case-insensitive substring)")
+
+    cmp_p = sub.add_parser("compare", help="diff an output tree against a reference zip/folder")
+    cmp_p.add_argument("--reference", "-r", required=True, help="reference .zip or folder")
+    cmp_p.add_argument("--against", "-a", required=True, help="your output folder")
+    cmp_p.add_argument("--json", default=None, help="write the full report here")
+    cmp_p.add_argument("--include-raw", action="store_true",
+                       help="also diff raw_part (portal passthrough, deliberately richer)")
     return p
 
 
 async def main_async(args: argparse.Namespace) -> int:
+    if args.command == "compare":
+        from .compare import compare, render
+
+        report = compare(Path(args.reference), Path(args.against), include_raw=args.include_raw)
+        print(render(report))
+        if args.json:
+            Path(args.json).write_text(json.dumps(report, ensure_ascii=False, indent=1))
+            print(f"\nreport written to {args.json}")
+        return 0
     out = Path(args.out)
     runner = Runner(out, layout=args.layout, resume=args.resume,
                     concurrency=args.concurrency, rps=args.rps,
                     batch_size=args.batch_size, site=args.site, limit=args.limit,
-                    workers=args.workers)
+                    workers=args.workers,
+                    parts_only=getattr(args, 'parts_only', False))
     try:
         if args.command == "article":
             if not args.target:
